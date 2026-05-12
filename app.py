@@ -229,16 +229,6 @@ def index():
     return render_template("index.html")
 
 
-@app.route("/debug/key")
-def debug_key():
-    key = os.environ.get("GEMINI_API_KEY", "")
-    return jsonify({
-        "len": len(key),
-        "starts_hex": key[:3].encode("utf-8").hex() if key else "",
-        "first_ord": ord(key[0]) if key else None,
-        "stripped_len": len(key.strip().lstrip('﻿')),
-    })
-
 
 @app.route("/analyze", methods=["POST"])
 def analyze():
@@ -250,11 +240,6 @@ def analyze():
         if "," in image_data:
             image_data = image_data.split(",", 1)[1]
         image_bytes = base64.b64decode(image_data)
-    except Exception as e:
-        return jsonify({"error": f"[decode] {e}"}), 500
-
-    try:
-        # MIME 타입 감지
         header = image_bytes[:4]
         if header[:2] == b'\xff\xd8':
             mime = "image/jpeg"
@@ -265,23 +250,15 @@ def analyze():
         else:
             mime = "image/jpeg"
         img_part = genai_types.Part.from_bytes(data=image_bytes, mime_type=mime)
-    except Exception as e:
-        return jsonify({"error": f"[PIL] {e}"}), 500
-
-    try:
         response = client.models.generate_content(model=MODEL, contents=[PROMPT, img_part])
-    except Exception as e:
-        return jsonify({"error": f"[Gemini] {e}"}), 500
-
-    try:
-        text = response.text.strip().lstrip("﻿")
+        text = response.text.strip().lstrip('﻿')
         if "```" in text:
             text = "\n".join(l for l in text.split("\n") if not l.strip().startswith("```")).strip()
         return jsonify(json.loads(text))
     except json.JSONDecodeError as e:
-        return jsonify({"error": f"[parse] {e} | raw: {response.text[:200]}"}), 500
+        return jsonify({"error": f"응답 파싱 실패: {e}"}), 500
     except Exception as e:
-        return jsonify({"error": f"[response] {e}"}), 500
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/save", methods=["POST"])
