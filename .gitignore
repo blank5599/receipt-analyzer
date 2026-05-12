@@ -1,8 +1,11 @@
 .env
 *.db
+result.json
 __pycache__/
 *.pyc
 .vercel
 venv/
 .venv/
 *.xlsx
+
+.vercel

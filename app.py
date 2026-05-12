@@ -238,10 +238,11 @@ def analyze():
         image_bytes = file.read()
         img = PIL.Image.open(io.BytesIO(image_bytes))
         response = client.models.generate_content(model=MODEL, contents=[PROMPT, img])
-        text = response.text.strip()
+        text = response.text.strip().lstrip('﻿')
         if "```" in text:
             text = "\n".join(l for l in text.split("\n") if not l.strip().startswith("```")).strip()
-        return jsonify(json.loads(text))
+        data = json.loads(text)
+        return jsonify(data)
     except json.JSONDecodeError as e:
         return jsonify({"error": f"응답 파싱 실패: {e}"}), 500
     except Exception as e:
