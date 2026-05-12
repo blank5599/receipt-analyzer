@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>영수증 자동 분석기</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --navy:   #003087; --navy2: #001952; --red: #E8112D;
+      --blue:   #0050B3; --bluel: #E4EDFA; --light: #F2F7FF;
+      --mid:    #585858; --border: #D0D8E8; --green: #0A7A3E;
+    }
+    body { font-family:'맑은 고딕','Malgun Gothic',sans-serif; background:var(--light); color:#1c1c1c; min-height:100vh; }
+
+    /* ── Header ── */
+    header {
+      background:var(--navy); height:64px;
+      display:flex; align-items:center; padding:0 40px; gap:14px;
+      position:sticky; top:0; z-index:100; box-shadow:0 2px 8px rgba(0,0,0,0.25);
+    }
+    .logo { width:36px;height:36px;background:var(--red);border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:bold;font-size:14px;flex-shrink:0; }
+    header h1 { color:#fff; font-size:17px; }
+    header .badge { margin-left:4px;background:rgba(255,255,255,0.12);color:rgba(255,255,255,0.65);font-size:11px;padding:3px 10px;border-radius:20px; }
+
+    /* ── Layout ── */
+    main { max-width:920px; margin:0 auto; padding:36px 20px 60px; }
+
+    /* ── Card ── */
+    .card { background:#fff;border-radius:12px;padding:28px 32px;box-shadow:0 2px 14px rgba(0,48,135,0.07);margin-bottom:24px; }
+    .card-title {
+      font-size:14px;font-weight:bold;color:var(--navy);
+      margin-bottom:20px;display:flex;align-items:center;gap:8px;
+    }
+    .card-title::before { content:'';display:block;width:4px;height:17px;background:var(--red);border-radius:2px; }
+    .card-title .count { margin-left:auto;font-size:12px;font-weight:normal;color:var(--mid); }
+
+    /* ── Drop Zone ── */
+    #drop-zone {
+      position:relative;border:2px dashed var(--border);border-radius:10px;
+      padding:44px 24px;text-align:center;cursor:pointer;transition:border-color .2s,background .2s;
+    }
+    #drop-zone:hover, #drop-zone.over { border-color:var(--navy); background:#F0F5FF; }
+    #file-input { position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer; }
+    .drop-icon { font-size:44px;display:block;margin-bottom:10px;pointer-events:none; }
+    .drop-text { font-size:15px;color:var(--mid);margin-bottom:4px;pointer-events:none; }
+    .drop-sub  { font-size:12px;color:#aaa;pointer-events:none; }
+
+    /* ── Thumbnail Grid ── */
+    #thumb-grid { display:none;flex-wrap:wrap;gap:12px;margin-top:20px; }
+    .thumb-item { position:relative;width:110px;border:1px solid var(--border);border-radius:8px;overflow:hidden;background:#fafafa;flex-shrink:0; }
+    .thumb-item img { width:110px;height:90px;object-fit:cover;display:block; }
+    .thumb-info { padding:5px 7px;font-size:11px;color:var(--mid);white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+    .thumb-remove { position:absolute;top:4px;right:4px;width:20px;height:20px;background:rgba(0,0,0,0.55);color:#fff;border:none;border-radius:50%;font-size:11px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .15s; }
+    .thumb-remove:hover { background:var(--red); }
+
+    /* ── Buttons ── */
+    .btn-primary {
+      display:none;margin-top:20px;width:100%;padding:14px;
+      background:var(--navy);color:#fff;border:none;border-radius:8px;
+      font-size:15px;font-family:inherit;font-weight:bold;cursor:pointer;transition:background .18s;
+    }
+    .btn-primary:hover:not(:disabled) { background:var(--navy2); }
+    .btn-primary:disabled { background:#b0b8c8;cursor:not-allowed; }
+
+    /* ── Progress ── */
+    #progress-wrap { display:none; margin-bottom:24px; }
+    .progress-label { font-size:13px;color:var(--mid);margin-bottom:8px;display:flex;justify-content:space-between; }
+    .progress-bar-bg { width:100%;height:8px;background:var(--border);border-radius:4px;overflow:hidden; }
+    .progress-bar-fill { height:100%;background:var(--navy);border-radius:4px;transition:width .3s ease;width:0%; }
+
+    /* ── Receipt Result Card ── */
+    #results-container { display:none; }
+    .receipt-result { background:#fff;border-radius:12px;box-shadow:0 2px 14px rgba(0,48,135,0.07);margin-bottom:24px;overflow:hidden; }
+
+    .receipt-header { background:var(--navy);padding:14px 24px;display:flex;align-items:center;gap:14px; }
+    .receipt-thumb { width:52px;height:52px;object-fit:cover;border-radius:6px;border:2px solid rgba(255,255,255,0.2);flex-shrink:0; }
+    .receipt-header-info { flex:1;min-width:0; }
+    .receipt-filename { font-size:12px;color:rgba(255,255,255,0.6); }
+    .receipt-store { font-size:17px;font-weight:bold;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+    .receipt-total-badge { background:var(--red);color:#fff;font-size:14px;font-weight:bold;padding:6px 14px;border-radius:20px;white-space:nowrap;flex-shrink:0; }
+
+    .receipt-loading { display:flex;align-items:center;gap:12px;padding:20px 24px;color:var(--mid);font-size:13px; }
+    .mini-spinner { width:20px;height:20px;border:3px solid var(--border);border-top-color:var(--navy);border-radius:50%;animation:spin .75s linear infinite;flex-shrink:0; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+
+    .receipt-error { padding:16px 24px;background:#FFF0F2;color:#B5001E;font-size:13px;border-top:1px solid #FFBFC8; }
+
+    .receipt-meta { display:flex;border-bottom:1px solid var(--border); }
+    .receipt-meta-item { flex:1;padding:14px 20px;border-right:1px solid var(--border); }
+    .receipt-meta-item:last-child { border-right:none; }
+    .meta-label { font-size:11px;color:#999;margin-bottom:4px; }
+    .meta-val   { font-size:14px;font-weight:bold; }
+
+    .items-tbl { width:100%;border-collapse:collapse; }
+    .items-tbl thead tr { background:var(--bluel); }
+    .items-tbl thead th { padding:10px 16px;font-size:12px;color:var(--navy);font-weight:bold;text-align:left; }
+    .items-tbl thead th.r { text-align:right; }
+    .items-tbl tbody tr { border-bottom:1px solid var(--border); }
+    .items-tbl tbody tr:last-child { border-bottom:none; }
+    .items-tbl tbody td { padding:10px 16px;font-size:13px; }
+    .items-tbl tbody td.r { text-align:right; }
+    .items-tbl tbody td.amount { text-align:right;font-weight:bold;color:var(--blue); }
+
+    /* ── Save Action Row ── */
+    .receipt-action {
+      padding:16px 20px;
+      border-top:1px solid var(--border);
+      display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+      background:#FAFBFF;
+    }
+    .action-label { font-size:13px;color:var(--mid);white-space:nowrap; }
+    .cat-select {
+      padding:7px 10px; border:1px solid var(--border); border-radius:6px;
+      font-size:13px; font-family:inherit; color:#1c1c1c; background:#fff;
+      cursor:pointer;
+    }
+    .btn-save-receipt {
+      padding:8px 18px; background:var(--navy); color:#fff;
+      border:none; border-radius:6px; font-size:13px; font-family:inherit;
+      font-weight:bold; cursor:pointer; transition:background .18s;
+    }
+    .btn-save-receipt:hover { background:var(--navy2); }
+    .btn-save-receipt:disabled { background:#b0b8c8; cursor:not-allowed; }
+
+    /* ── Saved State ── */
+    .saved-row {
+      padding:16px 20px; border-top:1px solid var(--border);
+      display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+      background:#F0FFF6;
+    }
+    .voucher-tag {
+      display:inline-flex; align-items:center; gap:6px;
+      background:#D4F5E5; color:var(--green);
+      font-size:13px; font-weight:bold;
+      padding:6px 14px; border-radius:20px;
+    }
+    .btn-excel-dl {
+      padding:7px 16px; background:var(--green); color:#fff;
+      border:none; border-radius:6px; font-size:13px; font-family:inherit;
+      font-weight:bold; cursor:pointer; text-decoration:none;
+      display:inline-flex; align-items:center; gap:6px;
+      transition:opacity .18s;
+    }
+    .btn-excel-dl:hover { opacity:.85; }
+
+    /* ── History ── */
+    #history-card .card-title { margin-bottom:0; }
+    .history-toolbar { display:flex;align-items:center;gap:10px;margin-bottom:18px;flex-wrap:wrap; }
+    .history-toolbar .count { font-size:13px;color:var(--mid); }
+    .history-toolbar .spacer { flex:1; }
+    .btn-export-all {
+      padding:8px 16px; background:var(--blue); color:#fff;
+      border:none; border-radius:6px; font-size:13px; font-family:inherit;
+      font-weight:bold; cursor:pointer; transition:opacity .18s;
+      text-decoration:none; display:inline-flex; align-items:center; gap:6px;
+    }
+    .btn-export-all:hover { opacity:.85; }
+
+    #history-empty { text-align:center;color:#bbb;font-size:14px;padding:32px 0; }
+
+    .hist-tbl { width:100%;border-collapse:collapse; }
+    .hist-tbl thead tr { background:var(--navy); }
+    .hist-tbl thead th { padding:11px 14px;font-size:12px;color:#fff;font-weight:bold;text-align:left; }
+    .hist-tbl thead th.r { text-align:right; }
+    .hist-tbl tbody tr { border-bottom:1px solid var(--border);transition:background .1s; }
+    .hist-tbl tbody tr:hover { background:var(--light); }
+    .hist-tbl tbody tr:last-child { border-bottom:none; }
+    .hist-tbl tbody td { padding:10px 14px;font-size:13px; }
+    .hist-tbl tbody td.r { text-align:right; }
+    .hist-tbl .voucher-cell { font-family:monospace;font-weight:bold;color:var(--navy); }
+    .hist-tbl .cat-pill {
+      display:inline-block;padding:2px 10px;border-radius:12px;
+      font-size:11px;font-weight:bold;
+      background:var(--bluel);color:var(--navy);
+    }
+    .btn-icon {
+      padding:5px 9px;border:1px solid var(--border);border-radius:5px;
+      background:#fff;cursor:pointer;font-size:13px;
+      transition:background .15s;
+    }
+    .btn-icon:hover { background:var(--light); }
+    .btn-icon.del:hover { background:#FFF0F2;border-color:#FFBFC8;color:var(--red); }
+
+    /* Footer */
+    footer { text-align:center;font-size:12px;color:#bbb;padding-bottom:32px; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">도</div>
+  <h1>영수증 자동 분석기</h1>
+  <span class="badge">Gemini AI</span>
+</header>
+
+<main>
+
+  <!-- ── 업로드 카드 ── -->
+  <div class="card">
+    <div class="card-title">
+      영수증 이미지 업로드
+      <span class="count" id="file-count"></span>
+    </div>
+    <div id="drop-zone">
+      <input type="file" id="file-input" accept="image/*" multiple>
+      <span class="drop-icon">🧾</span>
+      <p class="drop-text">이미지를 드래그하거나 클릭하여 선택</p>
+      <p class="drop-sub">여러 파일 동시 업로드 가능 &nbsp;·&nbsp; JPG · PNG · WEBP 지원</p>
+    </div>
+    <div id="thumb-grid"></div>
+    <button class="btn-primary" id="btn-analyze" onclick="runAnalyze()">전체 분석 시작</button>
+  </div>
+
+  <!-- ── 진행 바 ── -->
+  <div id="progress-wrap">
+    <div class="progress-label">
+      <span id="progress-text">분석 중…</span>
+      <span id="progress-ratio"></span>
+    </div>
+    <div class="progress-bar-bg"><div class="progress-bar-fill" id="progress-fill"></div></div>
+  </div>
+
+  <!-- ── 분석 결과 ── -->
+  <div id="results-container"></div>
+
+  <!-- ── 전표 내역 ── -->
+  <div class="card" id="history-card">
+    <div class="card-title">저장된 전표 내역</div>
+    <div class="history-toolbar">
+      <span class="count" id="history-count">불러오는 중…</span>
+      <div class="spacer"></div>
+      <a href="/export/all" class="btn-export-all" id="btn-export-all">📥 전체 Excel 내보내기</a>
+    </div>
+    <div id="history-empty" style="display:none">저장된 전표가 없습니다.</div>
+    <div id="history-table-wrap" style="display:none; overflow-x:auto;">
+      <table class="hist-tbl">
+        <thead>
+          <tr>
+            <th>전표번호</th>
+            <th>가맹점명</th>
+            <th>결제일시</th>
+            <th>비용분류</th>
+            <th class="r">총금액</th>
+            <th class="r">항목수</th>
+            <th>저장일시</th>
+            <th style="text-align:center">작업</th>
+          </tr>
+        </thead>
+        <tbody id="history-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+</main>
+
+<footer>한국도로공사 · 영수증 분석 도구 · Gemini AI 기반</footer>
+
+<script>
+  /* ── 상태 ──────────────────────────────────────── */
+  const dropZone     = document.getElementById('drop-zone');
+  const fileInput    = document.getElementById('file-input');
+  const thumbGrid    = document.getElementById('thumb-grid');
+  const btnAnalyze   = document.getElementById('btn-analyze');
+  const fileCountEl  = document.getElementById('file-count');
+  const progressWrap = document.getElementById('progress-wrap');
+  const progressText = document.getElementById('progress-text');
+  const progressRatio= document.getElementById('progress-ratio');
+  const progressFill = document.getElementById('progress-fill');
+  const resultsContainer = document.getElementById('results-container');
+
+  let fileMap = new Map();   // id → { file, dataUrl }
+  let nextId  = 0;
+
+  /* ── Drag & Drop ──────────────────────────────── */
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('over'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('over'));
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault(); dropZone.classList.remove('over');
+    addFiles([...e.dataTransfer.files]);
+  });
+  fileInput.addEventListener('change', () => { addFiles([...fileInput.files]); fileInput.value = ''; });
+
+  function addFiles(files) {
+    files.filter(f => f.type.startsWith('image/')).forEach(file => {
+      const id = nextId++;
+      const reader = new FileReader();
+      reader.onload = ev => {
+        fileMap.set(id, { file, dataUrl: ev.target.result });
+        renderThumb(id, file, ev.target.result);
+        updateUploadUI();
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function renderThumb(id, file, dataUrl) {
+    const div = document.createElement('div');
+    div.className = 'thumb-item'; div.id = `thumb-${id}`;
+    div.innerHTML = `
+      <img src="${dataUrl}" alt="${file.name}">
+      <div class="thumb-info" title="${file.name}">${file.name}</div>
+      <button class="thumb-remove" onclick="removeFile(${id})">✕</button>`;
+    thumbGrid.appendChild(div);
+    thumbGrid.style.display = 'flex';
+  }
+
+  function removeFile(id) {
+    fileMap.delete(id);
+    document.getElementById(`thumb-${id}`)?.remove();
+    if (fileMap.size === 0) thumbGrid.style.display = 'none';
+    updateUploadUI();
+  }
+
+  function updateUploadUI() {
+    const n = fileMap.size;
+    fileCountEl.textContent = n > 0 ? `${n}개 선택됨` : '';
+    btnAnalyze.style.display = n > 0 ? 'block' : 'none';
+    btnAnalyze.textContent = n > 1 ? `전체 분석 시작 (${n}개)` : '분석 시작';
+  }
+
+  /* ── 분석 실행 ────────────────────────────────── */
+  async function runAnalyze() {
+    if (!fileMap.size) return;
+    btnAnalyze.disabled = true;
+    resultsContainer.innerHTML = '';
+    resultsContainer.style.display = 'block';
+
+    const entries = [...fileMap.entries()];
+    const total   = entries.length;
+    let   done    = 0;
+
+    progressWrap.style.display = 'block';
+    setProgress(0, total);
+
+    const cardMap = new Map();
+    entries.forEach(([id, { file, dataUrl }]) => {
+      const card = createLoadingCard(file.name, dataUrl);
+      resultsContainer.appendChild(card);
+      cardMap.set(id, card);
+    });
+    resultsContainer.scrollIntoView({ behavior:'smooth', block:'start' });
+
+    await Promise.all(entries.map(async ([id, { file, dataUrl }]) => {
+      const card = cardMap.get(id);
+      try {
+        const fd = new FormData();
+        fd.append('image', file);
+        const res  = await fetch('/analyze', { method:'POST', body:fd });
+        const data = await res.json();
+        if (data.error) fillCardError(card, data.error);
+        else            fillCardResult(card, file.name, dataUrl, data);
+      } catch {
+        fillCardError(card, '서버 통신 오류');
+      } finally {
+        done++;
+        setProgress(done, total);
+      }
+    }));
+
+    progressText.textContent = `분석 완료 (${total}개)`;
+    btnAnalyze.disabled = false;
+  }
+
+  function setProgress(done, total) {
+    const pct = total ? Math.round(done / total * 100) : 0;
+    progressFill.style.width = pct + '%';
+    progressText.textContent = done < total ? `분석 중… (${done}/${total})` : `분석 완료 (${total}개)`;
+    progressRatio.textContent = pct + '%';
+  }
+
+  /* ── 카드 생성 ────────────────────────────────── */
+  function createLoadingCard(filename, dataUrl) {
+    const div = document.createElement('div');
+    div.className = 'receipt-result';
+    div.innerHTML = `
+      <div class="receipt-header">
+        <img class="receipt-thumb" src="${dataUrl}" alt="">
+        <div class="receipt-header-info">
+          <div class="receipt-filename">${filename}</div>
+          <div class="receipt-store">분석 중…</div>
+        </div>
+      </div>
+      <div class="receipt-loading"><div class="mini-spinner"></div>Gemini AI가 영수증을 분석 중입니다…</div>`;
+    return div;
+  }
+
+  function fillCardError(card, msg) {
+    card.querySelector('.receipt-store').textContent = '분석 실패';
+    card.querySelector('.receipt-loading')?.remove();
+    const err = document.createElement('div');
+    err.className = 'receipt-error';
+    err.textContent = '⚠ ' + msg;
+    card.appendChild(err);
+  }
+
+  function fillCardResult(card, filename, dataUrl, data) {
+    const store = data.store_name       || '가맹점명 불명';
+    const dt    = data.payment_datetime || '-';
+    const total = data.total_amount != null ? fmt(data.total_amount) + '원' : '-';
+    const items = data.items || [];
+
+    card.querySelector('.receipt-store').textContent = store;
+    const badge = document.createElement('div');
+    badge.className = 'receipt-total-badge';
+    badge.textContent = total;
+    card.querySelector('.receipt-header').appendChild(badge);
+    card.querySelector('.receipt-loading')?.remove();
+
+    // 메타 행
+    const meta = document.createElement('div');
+    meta.className = 'receipt-meta';
+    meta.innerHTML = `
+      <div class="receipt-meta-item"><div class="meta-label">결제일시</div><div class="meta-val">${dt}</div></div>
+      <div class="receipt-meta-item"><div class="meta-label">항목 수</div><div class="meta-val">${items.length}개</div></div>
+      <div class="receipt-meta-item"><div class="meta-label">총 결제금액</div><div class="meta-val" style="color:var(--red)">${total}</div></div>`;
+    card.appendChild(meta);
+
+    // 품목 테이블
+    const tableWrap = document.createElement('div');
+    if (!items.length) {
+      tableWrap.style.cssText = 'padding:16px 24px;font-size:13px;color:#aaa;text-align:center';
+      tableWrap.textContent = '품목 정보 없음';
+    } else {
+      const rows = items.map((item, i) => {
+        const qty   = item.quantity ?? 1;
+        const up    = item.unit_price;
+        const rowT  = up != null ? qty * up : null;
+        return `<tr>
+          <td>${i + 1}</td><td>${item.name || '-'}</td>
+          <td class="r">${qty}</td>
+          <td class="r">${up != null ? fmt(up) + '원' : '-'}</td>
+          <td class="amount">${rowT != null ? fmt(rowT) + '원' : '-'}</td>
+        </tr>`;
+      }).join('');
+      tableWrap.innerHTML = `
+        <table class="items-tbl">
+          <thead><tr>
+            <th style="width:36px">#</th><th>품목명</th>
+            <th class="r" style="width:64px">수량</th>
+            <th class="r" style="width:110px">단가</th>
+            <th class="r" style="width:110px">금액</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>`;
+    }
+    card.appendChild(tableWrap);
+
+    /* ── 전표 저장 액션 ── */
+    const action = document.createElement('div');
+    action.className = 'receipt-action';
+    action.innerHTML = `
+      <span class="action-label">비용분류</span>
+      <select class="cat-select">
+        <option>식비</option><option>교통비</option><option>숙박비</option>
+        <option>회의비</option><option>사무용품</option><option>기타</option>
+      </select>
+      <button class="btn-save-receipt">💾 전표 저장</button>`;
+    card.appendChild(action);
+
+    action.querySelector('.btn-save-receipt').addEventListener('click', async function () {
+      const catEl = action.querySelector('.cat-select');
+      this.disabled = true;
+      this.textContent = '저장 중…';
+      try {
+        const res = await fetch('/save', {
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ ...data, category: catEl.value, filename }),
+        });
+        const result = await res.json();
+        if (result.error) { alert('저장 실패: ' + result.error); this.disabled = false; this.textContent = '💾 전표 저장'; return; }
+
+        // 저장 완료 → 액션 행 교체
+        const saved = document.createElement('div');
+        saved.className = 'saved-row';
+        saved.innerHTML = `
+          <span class="voucher-tag">✅ 전표번호: ${result.voucher_no}</span>
+          <a href="/export/${result.id}" class="btn-excel-dl">📥 Excel 다운로드</a>`;
+        action.replaceWith(saved);
+        loadHistory();
+      } catch { alert('저장 중 오류가 발생했습니다.'); this.disabled = false; this.textContent = '💾 전표 저장'; }
+    });
+  }
+
+  /* ── 전표 내역 ────────────────────────────────── */
+  async function loadHistory() {
+    try {
+      const res  = await fetch('/receipts');
+      const list = await res.json();
+      renderHistory(list);
+    } catch { /* 무시 */ }
+  }
+
+  function renderHistory(list) {
+    const countEl   = document.getElementById('history-count');
+    const emptyEl   = document.getElementById('history-empty');
+    const tableWrap = document.getElementById('history-table-wrap');
+    const tbody     = document.getElementById('history-tbody');
+    const exportBtn = document.getElementById('btn-export-all');
+
+    countEl.textContent = `총 ${list.length}건`;
+
+    if (!list.length) {
+      emptyEl.style.display = 'block';
+      tableWrap.style.display = 'none';
+      exportBtn.style.display = 'none';
+      return;
+    }
+
+    emptyEl.style.display  = 'none';
+    tableWrap.style.display = 'block';
+    exportBtn.style.display = 'inline-flex';
+
+    tbody.innerHTML = list.map(r => `
+      <tr>
+        <td class="voucher-cell">${r.voucher_no}</td>
+        <td>${r.store_name || '-'}</td>
+        <td>${r.payment_datetime || '-'}</td>
+        <td><span class="cat-pill">${r.category || '-'}</span></td>
+        <td class="r">${r.total_amount != null ? fmt(r.total_amount) + '원' : '-'}</td>
+        <td class="r">${r.item_count}개</td>
+        <td>${r.created_at}</td>
+        <td style="text-align:center;white-space:nowrap;display:flex;gap:6px;justify-content:center;">
+          <a href="/export/${r.id}" class="btn-icon" title="Excel 다운로드">📥</a>
+          <button class="btn-icon del" onclick="deleteReceipt(${r.id})" title="삭제">🗑</button>
+        </td>
+      </tr>`).join('');
+  }
+
+  async function deleteReceipt(id) {
+    if (!confirm('이 전표를 삭제하시겠습니까?')) return;
+    await fetch(`/receipts/${id}`, { method:'DELETE' });
+    loadHistory();
+  }
+
+  function fmt(n) { return Number(n).toLocaleString('ko-KR'); }
+
+  // 페이지 로드 시 내역 조회
+  loadHistory();
+</script>
+</body>
+</html>
