@@ -18,7 +18,7 @@ from database import init_db, get_conn, next_voucher_no
 
 load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip().lstrip('﻿')
 if not GEMINI_API_KEY:
     raise RuntimeError(".env 파일에 GEMINI_API_KEY가 설정되지 않았습니다.")
 
@@ -227,6 +227,17 @@ def build_excel_all(all_data):
 @app.route("/")
 def index():
     return render_template("index.html")
+
+
+@app.route("/debug/key")
+def debug_key():
+    key = os.environ.get("GEMINI_API_KEY", "")
+    return jsonify({
+        "len": len(key),
+        "starts_hex": key[:3].encode("utf-8").hex() if key else "",
+        "first_ord": ord(key[0]) if key else None,
+        "stripped_len": len(key.strip().lstrip('﻿')),
+    })
 
 
 @app.route("/analyze", methods=["POST"])
