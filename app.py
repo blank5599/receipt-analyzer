@@ -1,6 +1,7 @@
 import os
 import io
 import json
+import base64
 from pathlib import Path
 from datetime import datetime
 
@@ -229,20 +230,21 @@ def index():
 
 @app.route("/analyze", methods=["POST"])
 def analyze():
-    if "image" not in request.files:
-        return jsonify({"error": "이미지 파일이 없습니다."}), 400
-    file = request.files["image"]
-    if not file or file.filename == "":
-        return jsonify({"error": "파일을 선택해주세요."}), 400
+    body = request.get_json(silent=True) or {}
+    image_data = body.get("image", "")
+    if not image_data:
+        return jsonify({"error": "이미지 데이터가 없습니다."}), 400
     try:
-        image_bytes = file.read()
+        # data URL 형식: "data:image/jpeg;base64,..."
+        if "," in image_data:
+            image_data = image_data.split(",", 1)[1]
+        image_bytes = base64.b64decode(image_data)
         img = PIL.Image.open(io.BytesIO(image_bytes))
         response = client.models.generate_content(model=MODEL, contents=[PROMPT, img])
-        text = response.text.strip().lstrip('﻿')
+        text = response.text.strip().lstrip("﻿")
         if "```" in text:
             text = "\n".join(l for l in text.split("\n") if not l.strip().startswith("```")).strip()
-        data = json.loads(text)
-        return jsonify(data)
+        return jsonify(json.loads(text))
     except json.JSONDecodeError as e:
         return jsonify({"error": f"응답 파싱 실패: {e}"}), 500
     except Exception as e:

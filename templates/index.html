@@ -344,9 +344,11 @@
     await Promise.all(entries.map(async ([id, { file, dataUrl }]) => {
       const card = cardMap.get(id);
       try {
-        const fd = new FormData();
-        fd.append('image', file);
-        const res  = await fetch('/analyze', { method:'POST', body:fd });
+        const res  = await fetch('/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image: dataUrl, filename: file.name }),
+        });
         const data = await res.json();
         if (data.error) fillCardError(card, data.error);
         else            fillCardResult(card, file.name, dataUrl, data);
