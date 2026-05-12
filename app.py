@@ -8,6 +8,7 @@ from datetime import datetime
 from flask import Flask, render_template, request, jsonify, send_file
 from dotenv import load_dotenv
 from google import genai
+from google.genai import types as genai_types
 import PIL.Image
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -242,12 +243,22 @@ def analyze():
         return jsonify({"error": f"[decode] {e}"}), 500
 
     try:
-        img = PIL.Image.open(io.BytesIO(image_bytes))
+        # MIME 타입 감지
+        header = image_bytes[:4]
+        if header[:2] == b'\xff\xd8':
+            mime = "image/jpeg"
+        elif header[:4] == b'\x89PNG':
+            mime = "image/png"
+        elif header[:4] == b'RIFF':
+            mime = "image/webp"
+        else:
+            mime = "image/jpeg"
+        img_part = genai_types.Part.from_bytes(data=image_bytes, mime_type=mime)
     except Exception as e:
         return jsonify({"error": f"[PIL] {e}"}), 500
 
     try:
-        response = client.models.generate_content(model=MODEL, contents=[PROMPT, img])
+        response = client.models.generate_content(model=MODEL, contents=[PROMPT, img_part])
     except Exception as e:
         return jsonify({"error": f"[Gemini] {e}"}), 500
 
