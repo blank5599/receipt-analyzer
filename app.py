@@ -235,20 +235,31 @@ def analyze():
     if not image_data:
         return jsonify({"error": "이미지 데이터가 없습니다."}), 400
     try:
-        # data URL 형식: "data:image/jpeg;base64,..."
         if "," in image_data:
             image_data = image_data.split(",", 1)[1]
         image_bytes = base64.b64decode(image_data)
+    except Exception as e:
+        return jsonify({"error": f"[decode] {e}"}), 500
+
+    try:
         img = PIL.Image.open(io.BytesIO(image_bytes))
+    except Exception as e:
+        return jsonify({"error": f"[PIL] {e}"}), 500
+
+    try:
         response = client.models.generate_content(model=MODEL, contents=[PROMPT, img])
+    except Exception as e:
+        return jsonify({"error": f"[Gemini] {e}"}), 500
+
+    try:
         text = response.text.strip().lstrip("﻿")
         if "```" in text:
             text = "\n".join(l for l in text.split("\n") if not l.strip().startswith("```")).strip()
         return jsonify(json.loads(text))
     except json.JSONDecodeError as e:
-        return jsonify({"error": f"응답 파싱 실패: {e}"}), 500
+        return jsonify({"error": f"[parse] {e} | raw: {response.text[:200]}"}), 500
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": f"[response] {e}"}), 500
 
 
 @app.route("/save", methods=["POST"])
